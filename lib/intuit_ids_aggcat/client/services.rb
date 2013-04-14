@@ -2,6 +2,8 @@ require 'oauth'
 require 'rexml/document'
 require 'xml/mapping'
 require 'intuit_ids_aggcat/client/intuit_xml_mappings'
+require 'eventmachine'
+require 'em-http-request'
 
 module IntuitIdsAggcat
 
@@ -28,13 +30,59 @@ module IntuitIdsAggcat
           end
         end
 
+
+
         ##
         # Gets the institution details for id. If oauth_token_info isn't provided, new tokens are provisioned using "default" user
         # consumer_key and consumer_secret will be retrieved from the Configuration class if not provided
         def get_institution_detail id, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens("default"), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          
           response = oauth_get_request "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}", oauth_token_info, consumer_key, consumer_secret
+          
           institutions = InstitutionDetail.load_from_xml(response[:response_xml].root)
           institutions
+        end
+
+        def getAccessToken(oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret)
+
+          #oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens("default") if oauth_token_info.nil?
+          oauth_token = oauth_token_info[:oauth_token]
+          oauth_token_secret = oauth_token_info[:oauth_token_secret]
+
+          options = { :request_token_path => 'https://financialdatafeed.platform.intuit.com', :timeout => 120 } 
+          options = options.merge({ :proxy => IntuitIdsAggcat.config.proxy}) if !IntuitIdsAggcat.config.proxy.nil?
+          consumer = OAuth::Consumer.new(consumer_key, consumer_secret, options)      
+
+          return OAuth::AccessToken.new(consumer, oauth_token, oauth_token_secret)
+
+        end
+
+        ##
+        # Gets the institution details for id. If oauth_token_info isn't provided, new tokens are provisioned using "default" user
+        # consumer_key and consumer_secret will be retrieved from the Configuration class if not provided
+        def get_institution_detail_em id, em_deferrable, oauth_token_info = nil, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+
+          url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}"
+
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+              return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+          }
+          callback = lambda { |result| 
+            begin 
+              response_xml = REXML::Document.new result.body
+            rescue #REXML::ParseException => msg
+                Rails.logger.error "REXML Parse Exception"
+                em_deferrable.fail
+                return nil
+            end
+            institutions = InstitutionDetail.load_from_xml(response_xml.root)            
+            em_deferrable.succeed(institutions)
+          }
+          EM.defer(operation, callback)
         end
 
         ##
@@ -80,6 +128,51 @@ module IntuitIdsAggcat
         #    challenge_node_id   : challenge node ID to pass to challenge_response if this is a challenge 
         #    description         : text description of the result of the discover request
 
+        def discover_and_add_accounts_with_credentials_em em_deferrable, institution_id, creds_hash, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 30
+
+          url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{institution_id}/logins"
+          credentials_array = []
+          creds_hash.each do |k,v|
+            c = Credential.new
+            c.name = k
+            c.value = v
+            credentials_array.push c
+          end
+          creds = Credentials.new
+          creds.credential = credentials_array
+          il = InstitutionLogin.new
+          il.credentials = creds
+          body = il.save_to_xml.to_s
+          headers = {}
+
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+            response = access_token.post(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' }.merge(headers))
+          }
+          callback = lambda { |result| 
+            if result.nil? || result.body.nil?
+              em_deferrable.fail("nil response when discovering accounts") if !em_deferrable.nil?
+              return
+            end
+            response_xml = REXML::Document.new result.body    
+             # handle challenge responses from discoverAndAcccounts flow
+            challenge_session_id = challenge_node_id = nil
+            if !result["challengeSessionId"].nil?
+              challenge_session_id = response["challengeSessionId"]
+              challenge_node_id = response["challengeNodeId"]
+            end
+            response_hash = { :challenge_session_id => challenge_session_id, :challenge_node_id => challenge_node_id, :response_code => result.code, :response_xml => response_xml }
+            @params = discover_account_data_to_hash response_hash
+            em_deferrable.succeed(@params)          
+          }
+
+          EM.defer(operation, callback)          
+
+        end
+
         def discover_and_add_accounts_with_credentials institution_id, username, creds_hash, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 30
 
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{institution_id}/logins"
@@ -123,11 +216,118 @@ module IntuitIdsAggcat
         end
 
         ##
+        # Gets all accounts for a customer
+        def get_customer_accounts_em em_deferrable, username, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          
+          url = "https://financialdatafeed.platform.intuit.com/v1/accounts/"
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+              puts "accessing intuit accounts"
+              return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+          }
+          callback = lambda { |result| 
+            if result.nil? || result.body.nil?
+              em_deferrable.fail
+              return nil
+            end
+            puts "loading accounts"
+            begin 
+              response_xml = REXML::Document.new result.body
+            rescue REXML::ParseException => msg
+              em_deferrable.fail
+              return nil
+            end
+            accounts = AccountList.load_from_xml(response_xml.root)
+            puts "marking success"
+            em_deferrable.succeed(accounts)
+          }
+
+          EM.defer(operation, callback)          
+        end
+
+        ##
         # Gets accounts for a specific customer login_id
         def get_login_accounts login_id, username, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
           url = "https://financialdatafeed.platform.intuit.com/v1/logins/#{login_id}/accounts"
           response = oauth_get_request url, oauth_token_info
           accounts = AccountList.load_from_xml(response[:response_xml].root)
+        end
+
+        ##
+        # Gets accounts for a specific customer login_id
+        def get_login_accounts_em em_deferrable, login_id, username, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          url = "https://financialdatafeed.platform.intuit.com/v1/logins/#{login_id}/accounts"
+
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+              return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+          }
+          callback = lambda { |result| 
+            if result.nil? || result.body.nil?
+              em_deferrable.fail
+              return nil
+            end
+            puts "loading accounts"
+            begin 
+              response_xml = REXML::Document.new result.body
+            rescue REXML::ParseException => msg
+              em_deferrable.fail
+              return nil
+            end
+            accounts = AccountList.load_from_xml(response_xml.root)
+            puts "marking success"
+            em_deferrable.succeed(accounts)
+          }
+          EM.defer(operation, callback)          
+
+        end        
+
+
+        ##
+        # Helper method to issue get requests
+        def oauth_get_request url, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 120
+          oauth_token = oauth_token_info[:oauth_token]
+          oauth_token_secret = oauth_token_info[:oauth_token_secret]
+
+          options = { :request_token_path => 'https://financialdatafeed.platform.intuit.com', :timeout => timeout } 
+          options = options.merge({ :proxy => IntuitIdsAggcat.config.proxy}) if !IntuitIdsAggcat.config.proxy.nil?
+          consumer = OAuth::Consumer.new(consumer_key, consumer_secret, options)
+          access_token = OAuth::AccessToken.new(consumer, oauth_token, oauth_token_secret)
+          begin
+            response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            response_xml = REXML::Document.new response.body
+          rescue REXML::ParseException => msg
+              #Rails.logger.error "REXML Parse Exception"
+              return nil
+          end
+          { :response_code => response.code, :response_xml => response_xml }
+        end
+
+        ##
+        # Helper method to issue put requests
+        def oauth_put_request url, oauth_token_info, body = nil, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 120
+          oauth_token = oauth_token_info[:oauth_token]
+          oauth_token_secret = oauth_token_info[:oauth_token_secret]
+
+          options = { :request_token_path => 'https://financialdatafeed.platform.intuit.com', :timeout => timeout, :http_method => :put } 
+          options = options.merge({ :proxy => IntuitIdsAggcat.config.proxy}) if !IntuitIdsAggcat.config.proxy.nil?
+          consumer = OAuth::Consumer.new(consumer_key, consumer_secret, options)
+          access_token = OAuth::AccessToken.new(consumer, oauth_token, oauth_token_secret)
+          begin
+            response = access_token.put(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            response_xml = REXML::Document.new response.body
+          rescue REXML::ParseException => msg
+              #Rails.logger.error "REXML Parse Exception"
+              #Rails.logger.error msg
+              return nil
+          end
+          { :response_code => response.code, :response_xml => response_xml }
         end
 
         ##
@@ -138,6 +338,38 @@ module IntuitIdsAggcat
           response = oauth_put_request url, oauth_token_info, body
           return response
         end
+
+        ##
+        # Explicitly refreshes the customer account at an institution
+        def update_institution_login_explicit_refresh_em login_id, deferred_em, username, oauth_token_info = nil, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          url = "https://financialdatafeed.platform.intuit.com/v1/logins/#{login_id}?refresh=true"
+          body = InstitutionLogin.new.save_to_xml.to_s
+          
+          # IF THIS DOESN'T WORK - Add :http_method => :put to access token options...
+
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+              return access_token.put(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+          }
+          callback = lambda { |result| 
+            begin 
+              response_xml = REXML::Document.new result.body
+            rescue #REXML::ParseException => msg
+                Rails.logger.error "REXML Parse Exception"
+                em_deferrable.fail
+                return nil
+            end       
+            em_deferrable.succeed({ :response_code => result.code, :response_xml => response_xml })
+          }
+
+          EM.defer(operation, callback)
+
+
+          #return response
+        end        
 
         ##
         # Get transactions for a specific account and timeframe
@@ -153,12 +385,51 @@ module IntuitIdsAggcat
           tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
         end
 
+        ##
+        # Get transactions for a specific account and timeframe
+        def get_account_transactions_em em_deferrable, account_id, start_date, end_date, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          txn_start = start_date.strftime("%Y-%m-%d")
+          url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}/transactions?txnStartDate=#{txn_start}"
+          if !end_date.nil?
+            txn_end = end_date.strftime("%Y-%m-%d")
+            url = "#{url}&txnEndDate=#{txn_end}"
+          end
+
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+              puts "accessing transactions for intuit account #{account_id}"
+              return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+          }
+          callback = lambda { |result| 
+            if result.nil? || result.body.nil?
+              em_deferrable.fail
+              return nil
+            end
+            puts "loading accounts"
+            begin 
+              response_xml = REXML::Document.new result.body
+            rescue REXML::ParseException => msg
+              em_deferrable.fail
+              return nil
+            end
+            xml = REXML::Document.new response_xml.to_s
+            tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
+            # Return transactions to the main deferred process 
+            em_deferrable.succeed(tl)
+          }
+
+          EM.defer(operation, callback) 
+
+        end
+
         ## 
         # Helper method for parsing discover account response data
         def discover_account_data_to_hash daa
           challenge_type = "none"
           if daa[:response_code] == "201"
-            # return account list
             accounts = AccountList.load_from_xml(daa[:response_xml].root)
             { discover_response: daa, accounts: accounts, challenge_type: challenge_type, challenge: nil, description: "Account information retrieved." }
           elsif daa[:response_code] == "401" && daa[:challenge_session_id]
@@ -207,47 +478,6 @@ module IntuitIdsAggcat
           end
 
           { :challenge_session_id => challenge_session_id, :challenge_node_id => challenge_node_id, :response_code => response.code, :response_xml => response_xml }
-        end
-
-        ##
-        # Helper method to issue get requests
-        def oauth_get_request url, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 120
-          oauth_token = oauth_token_info[:oauth_token]
-          oauth_token_secret = oauth_token_info[:oauth_token_secret]
-
-          options = { :request_token_path => 'https://financialdatafeed.platform.intuit.com', :timeout => timeout } 
-          options = options.merge({ :proxy => IntuitIdsAggcat.config.proxy}) if !IntuitIdsAggcat.config.proxy.nil?
-          consumer = OAuth::Consumer.new(consumer_key, consumer_secret, options)
-          access_token = OAuth::AccessToken.new(consumer, oauth_token, oauth_token_secret)
-          begin
-            response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-            response_xml = REXML::Document.new response.body
-          rescue REXML::ParseException => msg
-              #Rails.logger.error "REXML Parse Exception"
-              return nil
-          end
-          { :response_code => response.code, :response_xml => response_xml }
-        end
-
-        ##
-        # Helper method to issue put requests
-        def oauth_put_request url, oauth_token_info, body = nil, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 120
-          oauth_token = oauth_token_info[:oauth_token]
-          oauth_token_secret = oauth_token_info[:oauth_token_secret]
-
-          options = { :request_token_path => 'https://financialdatafeed.platform.intuit.com', :timeout => timeout, :http_method => :put } 
-          options = options.merge({ :proxy => IntuitIdsAggcat.config.proxy}) if !IntuitIdsAggcat.config.proxy.nil?
-          consumer = OAuth::Consumer.new(consumer_key, consumer_secret, options)
-          access_token = OAuth::AccessToken.new(consumer, oauth_token, oauth_token_secret)
-          begin
-            response = access_token.put(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-            response_xml = REXML::Document.new response.body
-          rescue REXML::ParseException => msg
-              #Rails.logger.error "REXML Parse Exception"
-              #Rails.logger.error msg
-              return nil
-          end
-          { :response_code => response.code, :response_xml => response_xml }
         end
 
         ##

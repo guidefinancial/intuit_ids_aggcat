@@ -101,6 +101,65 @@ EOF_XML
                   oauth_token: params["oauth_token"][0] }
           
         end
+
+        def send_saml_assertion_em(em_deferrable, saml_assertion_b64, oauth_consumer_key, oauth_consumer_secret, instant)
+
+          oauth_url="https://oauth.intuit.com/oauth/v1/get_access_token_by_saml"
+
+          uri = URI.parse(oauth_url)
+          if IntuitIdsAggcat.config.proxy.nil?
+            http = Net::HTTP.new(uri.host, uri.port)
+          else
+            proxy_uri = URI.parse(IntuitIdsAggcat.config.proxy)
+            http = Net::HTTP::Proxy(proxy_uri.host,proxy_uri.port).new(uri.host, uri.port)
+          end
+          @request = Net::HTTP::Post.new(uri.request_uri)
+          @request["Content-Type"] = "application/x-www-form-urlencoded"
+          @request["Content-Language"] = "en-US"
+          @request["Content-Length"] = saml_assertion_b64.length
+          @request["Authorization"] = "OAuth oauth_consumer_key=\"#{oauth_consumer_key}\""
+          @request["Host"] = "financialdatafeed.platform.intuit.com"
+          @request.set_form_data({"saml_assertion"=>saml_assertion_b64})
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+          #http.set_debug_output($stdout)
+          
+
+          @operation = lambda {
+              puts 'started oauth 123'
+              puts "http: #{http}"
+              puts "request: #{@request}"
+              return http.request(@request)
+              #puts "getting oauth token here 123 456"
+              #@reply = http.request(@request)
+              #puts "reply: #{@reply}"
+              #return @reply
+          }
+
+          @callback = lambda { |response_back|
+            @response = response_back
+            puts "parsing response" 
+            if @response.nil? || @response.body.nil?
+              em_deferrable.fail
+              return
+            end
+            puts 'still parsing'
+            params = CGI::parse(@response.body)
+            puts 'got here 1'
+            oauth_token_info = {oauth_token_secret: params["oauth_token_secret"][0],
+                    oauth_token: params["oauth_token"][0] }        
+            puts 'got here 2'
+            oauth_token_info[:token_expiry] = instant + @token_timeout
+            puts 'got here 3'
+            em_deferrable.succeed(oauth_token_info) if !em_deferrable.nil?
+            puts 'got here 4 in parsing the body'
+          }
+
+          IntuitInstitution.restartEMIfNeeded
+          EM.defer(@operation, @callback) 
+
+        end        
+
         def get_oauth_info issuer_id, username, oauth_consumer_key, oauth_consumer_secret, private_key_path, private_key_string, private_key_password
           instant = Time.now
           saml_assertion_xml = get_saml_assertion_xml issuer_id, username, private_key_path, private_key_string, private_key_password, instant
@@ -110,9 +169,25 @@ EOF_XML
           oauth_token_info
         end
 
+        def get_oauth_info_em em_deferrable, issuer_id, username, oauth_consumer_key, oauth_consumer_secret, private_key_path, private_key_string, private_key_password
+          instant = Time.now
+          saml_assertion_xml = get_saml_assertion_xml issuer_id, username, private_key_path, private_key_string, private_key_password, instant
+          saml_assertion_b64 = Base64.strict_encode64(saml_assertion_xml)
+          oauth_token_info = send_saml_assertion_em em_deferrable, saml_assertion_b64, oauth_consumer_key, oauth_consumer_secret, instant
+       #   oauth_token_info[:token_expiry] = instant + @token_timeout
+       #   oauth_token_info
+        end
+
+
         def get_tokens username, issuer_id = IntuitIdsAggcat.config.issuer_id, oauth_consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, oauth_consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, certificate_path = IntuitIdsAggcat.config.certificate_path, certificate_string = IntuitIdsAggcat.config.certificate_string, certificate_password = IntuitIdsAggcat.config.certificate_password
             oauth_token_info = get_oauth_info issuer_id, username, oauth_consumer_key, oauth_consumer_secret, certificate_path, certificate_string, certificate_password
         end
+
+        def get_tokens_em em_deferrable, username, issuer_id = IntuitIdsAggcat.config.issuer_id, oauth_consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, oauth_consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, certificate_path = IntuitIdsAggcat.config.certificate_path, certificate_string = IntuitIdsAggcat.config.certificate_string, certificate_password = IntuitIdsAggcat.config.certificate_password
+          puts 'got here xyz'
+            oauth_token_info = get_oauth_info_em em_deferrable, issuer_id, username, oauth_consumer_key, oauth_consumer_secret, certificate_path, certificate_string, certificate_password
+          puts 'got here dsfsdsdf'
+        end        
 
       end
     end
