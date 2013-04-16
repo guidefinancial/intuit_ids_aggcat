@@ -184,9 +184,7 @@ EOF_XML
         end
 
         def get_tokens_em em_deferrable, username, issuer_id = IntuitIdsAggcat.config.issuer_id, oauth_consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, oauth_consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, certificate_path = IntuitIdsAggcat.config.certificate_path, certificate_string = IntuitIdsAggcat.config.certificate_string, certificate_password = IntuitIdsAggcat.config.certificate_password
-          puts 'got here xyz'
             oauth_token_info = get_oauth_info_em em_deferrable, issuer_id, username, oauth_consumer_key, oauth_consumer_secret, certificate_path, certificate_string, certificate_password
-          puts 'got here dsfsdsdf'
         end        
 
       end
