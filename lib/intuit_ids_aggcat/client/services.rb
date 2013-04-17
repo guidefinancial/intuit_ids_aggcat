@@ -58,7 +58,7 @@ module IntuitIdsAggcat
         ##
         # Gets the institution details for id. If oauth_token_info isn't provided, new tokens are provisioned using "default" user
         # consumer_key and consumer_secret will be retrieved from the Configuration class if not provided
-        def get_institution_detail_em id, em_deferrable, oauth_token_info = nil, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+        def get_institution_detail_em em_deferrable, id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
 
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}"
 
@@ -248,7 +248,7 @@ module IntuitIdsAggcat
 
         ##
         # Gets all accounts for a customer
-        def get_customer_accounts_em em_deferrable, username, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+        def get_customer_accounts_em em_deferrable, username, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
           
           url = "https://financialdatafeed.platform.intuit.com/v1/accounts/"
           access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
