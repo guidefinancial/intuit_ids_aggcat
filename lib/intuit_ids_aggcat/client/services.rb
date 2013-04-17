@@ -101,6 +101,38 @@ module IntuitIdsAggcat
         end
 
         ##
+        # Deletes the customer's accounts from aggregation at Intuit.
+        # username must be provided, if no oauth_token_info is provided, new tokens will be provisioned using username
+        def delete_customer_em em_deferrable, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/customers/"
+          
+          access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+          IntuitInstitution.restartEMIfNeeded
+
+          operation = lambda {
+            response = access_token.delete(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            return response
+          }
+          callback = lambda { |request_response| 
+            if request_response.nil? || request_response.body.nil?
+              em_deferrable.fail("nil response when deleting customer in delete_customer_em") if !em_deferrable.nil?
+              return
+            end
+            response_xml = REXML::Document.new request_response.body
+            hash = { :response_code => request_response.code, :response_xml => response_xml }
+            if hash[:response_code] != "200"
+              em_deferrable.fail("Response code is not 200 in delete account_em. Response code: #{hash[:response_code]}")
+            else
+              em_deferrable.succeed(hash)          
+            end
+          }
+
+          EM.defer(operation, callback)
+
+        end
+
+        ##
         # Deletes the a specific account for a customer from aggregation at Intuit.
         # username and account ID must be provided, if no oauth_token_info is provided, new tokens will be provisioned using username
         def delete_account username, account_id, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
@@ -112,7 +144,7 @@ module IntuitIdsAggcat
         ##
         # Deletes the a specific account for a customer from aggregation at Intuit.
         # username and account ID must be provided, if no oauth_token_info is provided, new tokens will be provisioned using username
-        def delete_account_em em_deferrable, username, account_id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+        def delete_account_em em_deferrable, account_id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
 
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}"
 
@@ -248,7 +280,7 @@ module IntuitIdsAggcat
 
         ##
         # Gets all accounts for a customer
-        def get_customer_accounts_em em_deferrable, username, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+        def get_customer_accounts_em em_deferrable, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
           
           url = "https://financialdatafeed.platform.intuit.com/v1/accounts/"
           access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
@@ -261,18 +293,18 @@ module IntuitIdsAggcat
           }
           callback = lambda { |result| 
             if result.nil? || result.body.nil?
-              em_deferrable.fail
+              em_deferrable.fail("nil response in get_customer_accounts_em")
               return nil
             end
-            puts "loading accounts"
+            puts "loading accounts in get_customer_accounts_em"
             begin 
               response_xml = REXML::Document.new result.body
             rescue REXML::ParseException => msg
-              em_deferrable.fail
+              em_deferrable.fail("parse exception in get customer accounts em")
               return nil
             end
             accounts = AccountList.load_from_xml(response_xml.root)
-            puts "marking success"
+            puts "marking success once accounts loaded in get_customer_accounts_em"
             em_deferrable.succeed(accounts)
           }
 
@@ -304,7 +336,7 @@ module IntuitIdsAggcat
               em_deferrable.fail
               return nil
             end
-            puts "loading accounts"
+            puts "loading accounts in get_login_accounts_em"
             begin 
               response_xml = REXML::Document.new result.body
             rescue REXML::ParseException => msg
@@ -312,7 +344,7 @@ module IntuitIdsAggcat
               return nil
             end
             accounts = AccountList.load_from_xml(response_xml.root)
-            puts "marking success"
+            puts "marking success in get_login_accounts_em"
             em_deferrable.succeed(accounts)
           }
           EM.defer(operation, callback)          
@@ -407,17 +439,20 @@ module IntuitIdsAggcat
               em_deferrable.fail
               return nil
             end
-            puts "loading accounts"
+            puts "loading accounts in get account transactions"
             begin 
               response_xml = REXML::Document.new result.body
             rescue REXML::ParseException => msg
+              puts "parsing failure in get account transactions"
               em_deferrable.fail
               return nil
             end
             xml = REXML::Document.new response_xml.to_s
             tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
             # Return transactions to the main deferred process 
+            puts 'marking success in get account transactions'
             em_deferrable.succeed(tl)
+
           }
 
           EM.defer(operation, callback) 
