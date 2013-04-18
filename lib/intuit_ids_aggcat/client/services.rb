@@ -4,6 +4,7 @@ require 'xml/mapping'
 require 'intuit_ids_aggcat/client/intuit_xml_mappings'
 require 'eventmachine'
 require 'em-http-request'
+require 'faraday'
 
 module IntuitIdsAggcat
 
@@ -55,9 +56,9 @@ module IntuitIdsAggcat
 
         end
 
-        ##
-        # Gets the institution details for id. If oauth_token_info isn't provided, new tokens are provisioned using "default" user
-        # consumer_key and consumer_secret will be retrieved from the Configuration class if not provided
+        #
+        #Gets the institution details for id. If oauth_token_info isn't provided, new tokens are provisioned using "default" user
+        #consumer_key and consumer_secret will be retrieved from the Configuration class if not provided
         def get_institution_detail_em em_deferrable, id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
 
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}"
@@ -82,6 +83,39 @@ module IntuitIdsAggcat
           }
           EM.defer(operation, callback)
         end
+
+       #  def get_institution_detail_em em_deferrable, id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+
+       #    @response = lambda { |result| 
+       #      begin 
+       #        response_xml = REXML::Document.new result.body
+       #      rescue #REXML::ParseException => msg
+       #          Rails.logger.error "REXML Parse Exception"
+       #          em_deferrable.fail if !em_deferrable.nil?
+       #          return nil
+       #      end
+       #      institutions = InstitutionDetail.load_from_xml(response_xml.root)            
+       #      em_deferrable.succeed(institutions)
+       #    }
+
+       #    conn = Faraday.new(url: "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}") do |faraday|
+       #      faraday.response :logger
+       #      faraday.use Faraday::Adapter::EMHttp
+       #    end
+
+       # #   url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}"
+
+       #    #access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
+
+       #    IntuitInstitution.restartEMIfNeeded
+
+       #    #operation = lambda {
+       #    #    return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+       #    #}
+
+       #    conn.get
+       #    #EM.defer(operation, callback)
+       #  end
 
         ##
         # Get a specific account for a customer from aggregation at Intuit.
@@ -419,6 +453,7 @@ module IntuitIdsAggcat
         ##
         # Get transactions for a specific account and timeframe
         def get_account_transactions_em em_deferrable, account_id, start_date, end_date, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          puts 'got to get_account_transactions_em 1'
           txn_start = start_date.strftime("%Y-%m-%d")
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}/transactions?txnStartDate=#{txn_start}"
           if !end_date.nil?
@@ -427,10 +462,10 @@ module IntuitIdsAggcat
           end
 
           access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
-
-          IntuitInstitution.restartEMIfNeeded
+          puts 'got to get_account_transactions_em 2'
 
           operation = lambda {
+                      puts 'got to get_account_transactions_em 4'
               puts "accessing transactions for intuit account #{account_id}"
               return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
           }
@@ -439,6 +474,7 @@ module IntuitIdsAggcat
               em_deferrable.fail
               return nil
             end
+                      puts 'got to get_account_transactions_em 5'
             puts "loading accounts in get account transactions"
             begin 
               response_xml = REXML::Document.new result.body
@@ -450,11 +486,12 @@ module IntuitIdsAggcat
             xml = REXML::Document.new response_xml.to_s
             tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
             # Return transactions to the main deferred process 
+                      puts 'got to get_account_transactions_em 6'
             puts 'marking success in get account transactions'
             em_deferrable.succeed(tl)
 
           }
-
+          puts 'got to get_account_transactions_em 3'
           EM.defer(operation, callback) 
 
         end
