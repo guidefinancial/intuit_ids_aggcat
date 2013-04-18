@@ -456,17 +456,19 @@ module IntuitIdsAggcat
           puts 'got to get_account_transactions_em 1'
           txn_start = start_date.strftime("%Y-%m-%d")
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}/transactions?txnStartDate=#{txn_start}"
-          if !end_date.nil?
-            txn_end = end_date.strftime("%Y-%m-%d")
-            url = "#{url}&txnEndDate=#{txn_end}"
-          end
+          #if !end_date.nil?
+          #  txn_end = end_date.strftime("%Y-%m-%d")
+          #  url = "#{url}&txnEndDate=#{txn_end}"
+          #end
+
+          IntuitInstitution.restartEMIfNeeded
 
           access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
           puts 'got to get_account_transactions_em 2'
 
           operation = lambda {
-              puts "Got to get_account_transactions_em 4aaa...."
-              response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+              puts "Got to get_account_transactions_em 4aaabbb...."
+              response = access_token.get(url, { "Content-Type"=> 'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
               puts "response: #{response}"
               return response
           }
