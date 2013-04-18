@@ -322,7 +322,6 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
-              puts "accessing intuit accounts"
               return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
           }
           callback = lambda { |result| 
@@ -453,6 +452,7 @@ module IntuitIdsAggcat
         ##
         # Get transactions for a specific account and timeframe
         def get_account_transactions_em em_deferrable, account_id, start_date, end_date, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
+          puts "Account_id: #{account_id} start_date: #{start_date} end_date: #{end_date}, oauth_token_infoL #{oauth_token_info}"
           puts 'got to get_account_transactions_em 1'
           txn_start = start_date.strftime("%Y-%m-%d")
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}/transactions?txnStartDate=#{txn_start}"
@@ -465,16 +465,19 @@ module IntuitIdsAggcat
           puts 'got to get_account_transactions_em 2'
 
           operation = lambda {
-                      puts 'got to get_account_transactions_em 4'
-              puts "accessing transactions for intuit account #{account_id}"
-              return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+              puts "Got to get_account_transactions_em 4"
+              response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+              puts "response: #{response}"
+              return response
           }
           callback = lambda { |result| 
-            if result.nil? || result.body.nil?
+            puts "got to get_account_transactions_em 5"
+            if result.nil?
               em_deferrable.fail
+              puts "Nil response for em_defferable in get_account_transactions!"
               return nil
             end
-                      puts 'got to get_account_transactions_em 5'
+            puts 'got to get_account_transactions_em 6'
             puts "loading accounts in get account transactions"
             begin 
               response_xml = REXML::Document.new result.body
@@ -486,10 +489,9 @@ module IntuitIdsAggcat
             xml = REXML::Document.new response_xml.to_s
             tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
             # Return transactions to the main deferred process 
-                      puts 'got to get_account_transactions_em 6'
+            puts 'got to get_account_transactions_em 6'
             puts 'marking success in get account transactions'
             em_deferrable.succeed(tl)
-
           }
           puts 'got to get_account_transactions_em 3'
           EM.defer(operation, callback) 
