@@ -465,7 +465,7 @@ module IntuitIdsAggcat
           puts 'got to get_account_transactions_em 2'
 
           operation = lambda {
-              puts "Got to get_account_transactions_em 4"
+              puts "Got to get_account_transactions_em 4aaa...."
               response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
               puts "response: #{response}"
               return response
