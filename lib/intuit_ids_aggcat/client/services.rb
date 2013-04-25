@@ -3,8 +3,8 @@ require 'rexml/document'
 require 'xml/mapping'
 require 'intuit_ids_aggcat/client/intuit_xml_mappings'
 require 'eventmachine'
-require 'em-http-request'
-require 'faraday'
+#require 'em-http-request'
+#require 'faraday'
 
 module IntuitIdsAggcat
 
