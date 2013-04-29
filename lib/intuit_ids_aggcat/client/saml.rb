@@ -148,11 +148,8 @@ EOF_XML
             puts 'got here 1'
             oauth_token_info = {oauth_token_secret: params["oauth_token_secret"][0],
                     oauth_token: params["oauth_token"][0] }        
-            puts 'got here 2'
             oauth_token_info[:token_expiry] = instant + @token_timeout
-            puts 'got here 3'
             em_deferrable.succeed(oauth_token_info) if !em_deferrable.nil?
-            puts 'got here 4 in parsing the body'
           }
 
           IntuitInstitution.restartEMIfNeeded

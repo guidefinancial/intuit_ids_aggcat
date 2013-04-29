@@ -250,20 +250,26 @@ module IntuitIdsAggcat
             response = access_token.post(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' }.merge(headers))
           }
           callback = lambda { |result| 
-            if result.nil? || result.body.nil?
-              em_deferrable.fail("nil response when discovering accounts") if !em_deferrable.nil?
-              return
-            end
-            response_xml = REXML::Document.new result.body    
-             # handle challenge responses from discoverAndAcccounts flow
-            challenge_session_id = challenge_node_id = nil
-            if !result["challengeSessionId"].nil?
-              challenge_session_id = response["challengeSessionId"]
-              challenge_node_id = response["challengeNodeId"]
-            end
-            response_hash = { :challenge_session_id => challenge_session_id, :challenge_node_id => challenge_node_id, :response_code => result.code, :response_xml => response_xml }
-            @params = discover_account_data_to_hash response_hash
-            em_deferrable.succeed(@params)          
+            begin 
+              if result.nil? || result.body.nil?
+                em_deferrable.fail("nil response when discovering accounts") if !em_deferrable.nil?
+                return
+              end
+              response_xml = REXML::Document.new result.body    
+               # handle challenge responses from discoverAndAcccounts flow
+              challenge_session_id = challenge_node_id = nil
+              if !result["challengeSessionId"].nil?
+                challenge_session_id = response["challengeSessionId"]
+                challenge_node_id = response["challengeNodeId"]
+              end
+              response_hash = { :challenge_session_id => challenge_session_id, :challenge_node_id => challenge_node_id, :response_code => result.code, :response_xml => response_xml }
+              @params = discover_account_data_to_hash response_hash
+              em_deferrable.succeed(@params)
+            rescue => e 
+              msg = "Exception in discover_and_add_accounts_with_credentials"
+              Rails.logger.fatal msg
+              em_deferrable.fail("#{msg} exception: #{e.message}")
+            end      
           }
 
           EM.defer(operation, callback)          
