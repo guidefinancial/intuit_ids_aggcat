@@ -68,54 +68,21 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
+            begin             
               return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            rescue => e 
+              handle_exception(e, "get_institution_detail_em", em_deferrable)
+            end   
           }
           callback = lambda { |result| 
             begin 
               response_xml = REXML::Document.new result.body
-            rescue #REXML::ParseException => msg
-                Rails.logger.error "REXML Parse Exception"
-                em_deferrable.fail if !em_deferrable.nil?
-                return nil
-            end
-            institutions = InstitutionDetail.load_from_xml(response_xml.root)            
-            em_deferrable.succeed(institutions)
+            rescue => e 
+              handle_exception(e, "get_institution_detail_em", em_deferrable)
+            end   
           }
           EM.defer(operation, callback)
         end
-
-       #  def get_institution_detail_em em_deferrable, id, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
-
-       #    @response = lambda { |result| 
-       #      begin 
-       #        response_xml = REXML::Document.new result.body
-       #      rescue #REXML::ParseException => msg
-       #          Rails.logger.error "REXML Parse Exception"
-       #          em_deferrable.fail if !em_deferrable.nil?
-       #          return nil
-       #      end
-       #      institutions = InstitutionDetail.load_from_xml(response_xml.root)            
-       #      em_deferrable.succeed(institutions)
-       #    }
-
-       #    conn = Faraday.new(url: "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}") do |faraday|
-       #      faraday.response :logger
-       #      faraday.use Faraday::Adapter::EMHttp
-       #    end
-
-       # #   url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/institutions/#{id}"
-
-       #    #access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
-
-       #    IntuitInstitution.restartEMIfNeeded
-
-       #    #operation = lambda {
-       #    #    return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-       #    #}
-
-       #    conn.get
-       #    #EM.defer(operation, callback)
-       #  end
 
         ##
         # Get a specific account for a customer from aggregation at Intuit.
@@ -145,21 +112,29 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
-            response = access_token.delete(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-            return response
+            begin 
+              response = access_token.delete(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+              return response
+            rescue => e 
+              handle_exception(e, "delete_customer_em", em_deferrable)
+            end   
           }
           callback = lambda { |request_response| 
-            if request_response.nil? || request_response.body.nil?
-              em_deferrable.fail("nil response when deleting customer in delete_customer_em") if !em_deferrable.nil?
-              return
-            end
-            response_xml = REXML::Document.new request_response.body
-            hash = { :response_code => request_response.code, :response_xml => response_xml }
-            if hash[:response_code] != "200"
-              em_deferrable.fail("Response code is not 200 in delete account_em. Response code: #{hash[:response_code]}")
-            else
-              em_deferrable.succeed(hash)          
-            end
+            begin             
+              if request_response.nil? || request_response.body.nil?
+                em_deferrable.fail("nil response when deleting customer in delete_customer_em") if !em_deferrable.nil?
+                return
+              end
+              response_xml = REXML::Document.new request_response.body
+              hash = { :response_code => request_response.code, :response_xml => response_xml }
+              if hash[:response_code] != "200"
+                em_deferrable.fail("Response code is not 200 in delete account_em. Response code: #{hash[:response_code]}")
+              else
+                em_deferrable.succeed(hash)          
+              end
+            rescue => e 
+              handle_exception(e, "delete_customer_em", em_deferrable)
+            end   
           }
 
           EM.defer(operation, callback)
@@ -170,7 +145,6 @@ module IntuitIdsAggcat
         # Deletes the a specific account for a customer from aggregation at Intuit.
         # username and account ID must be provided, if no oauth_token_info is provided, new tokens will be provisioned using username
         def delete_account username, account_id, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
-          puts "in gem, username = #{username}, account = #{account_id}."
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}"
           oauth_delete_request url, oauth_token_info
         end
@@ -187,21 +161,29 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
-            response = access_token.delete(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-            return response
+            begin
+              response = access_token.delete(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+              return response
+            rescue => e 
+              handle_exception(e, "delete_account_em", em_deferrable)
+            end   
           }
           callback = lambda { |request_response| 
-            if request_response.nil? || request_response.body.nil?
-              em_deferrable.fail("nil response when deleting accounts in delete_account_em") if !em_deferrable.nil?
-              return
-            end
-            response_xml = REXML::Document.new request_response.body
-            hash = { :response_code => request_response.code, :response_xml => response_xml }
-            if hash[:response_code] != "200"
-              em_deferrable.fail("Response code is not 200 in delete account_em. Response code: #{hash[:response_code]}")
-            else
-              em_deferrable.succeed(hash)          
-            end
+            begin
+              if request_response.nil? || request_response.body.nil?
+                em_deferrable.fail("nil response when deleting accounts in delete_account_em") if !em_deferrable.nil?
+                return
+              end
+              response_xml = REXML::Document.new request_response.body
+              hash = { :response_code => request_response.code, :response_xml => response_xml }
+              if hash[:response_code] != "200"
+                em_deferrable.fail("Response code is not 200 in delete account_em. Response code: #{hash[:response_code]}")
+              else
+                em_deferrable.succeed(hash)          
+              end
+            rescue => e 
+              handle_exception(e, "delete_account_em", em_deferrable)
+            end   
           }
 
           EM.defer(operation, callback)
@@ -247,10 +229,15 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
-            response = access_token.post(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' }.merge(headers))
+            begin 
+              response = access_token.post(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' }.merge(headers))
+            rescue => e 
+              handle_exception(e, "discover_and_add_new_accounts_with_credentials", em_deferrable)
+            end
           }
           callback = lambda { |result| 
             begin 
+              dsfdfsdfsd
               if result.nil? || result.body.nil?
                 em_deferrable.fail("nil response when discovering accounts") if !em_deferrable.nil?
                 return
@@ -266,14 +253,17 @@ module IntuitIdsAggcat
               @params = discover_account_data_to_hash response_hash
               em_deferrable.succeed(@params)
             rescue => e 
-              msg = "Exception in discover_and_add_accounts_with_credentials"
-              Rails.logger.fatal msg
-              em_deferrable.fail("#{msg} exception: #{e.message}")
+              handle_exception(e, "discover_and_add_new_accounts_with_credentials", em_deferrable)
             end      
           }
 
           EM.defer(operation, callback)          
 
+        end
+
+        def handle_exception(e, function_name, em_deferrable)
+          msg = "Exception in #{function_name}\n#{e.backtrace.join("\n")}"
+          em_deferrable.fail("#{msg} exception: #{e.message}")
         end
 
         def discover_and_add_accounts_with_credentials institution_id, username, creds_hash, oauth_token_info = IntuitIdsAggcat::Client::Saml.get_tokens(username), consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret, timeout = 30
@@ -328,23 +318,31 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
+            begin 
               return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            rescue => e 
+              handle_exception(e, "get_customer_accounts_em", em_deferrable)
+            end   
           }
           callback = lambda { |result| 
-            if result.nil? || result.body.nil?
-              em_deferrable.fail("nil response in get_customer_accounts_em")
-              return nil
-            end
-            puts "loading accounts in get_customer_accounts_em"
             begin 
-              response_xml = REXML::Document.new result.body
-            rescue REXML::ParseException => msg
-              em_deferrable.fail("parse exception in get customer accounts em")
-              return nil
-            end
-            accounts = AccountList.load_from_xml(response_xml.root)
-            puts "marking success once accounts loaded in get_customer_accounts_em"
-            em_deferrable.succeed(accounts)
+              if result.nil? || result.body.nil?
+                em_deferrable.fail("nil response in get_customer_accounts_em")
+                return nil
+              end
+
+              begin 
+                response_xml = REXML::Document.new result.body
+              rescue REXML::ParseException => msg
+                em_deferrable.fail("parse exception in get customer accounts em")
+                return nil
+              end
+              accounts = AccountList.load_from_xml(response_xml.root)
+
+              em_deferrable.succeed(accounts)
+            rescue => e 
+              handle_exception(e, "get_customer_accounts_em", em_deferrable)
+            end   
           }
 
           EM.defer(operation, callback)          
@@ -368,23 +366,31 @@ module IntuitIdsAggcat
           IntuitInstitution.restartEMIfNeeded
 
           operation = lambda {
+            begin
               return access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
+            rescue => e 
+              handle_exception(e, "get_login_accounts_em", em_deferrable)
+            end   
           }
           callback = lambda { |result| 
-            if result.nil? || result.body.nil?
-              em_deferrable.fail
-              return nil
-            end
-            puts "loading accounts in get_login_accounts_em"
-            begin 
-              response_xml = REXML::Document.new result.body
-            rescue REXML::ParseException => msg
-              em_deferrable.fail
-              return nil
-            end
-            accounts = AccountList.load_from_xml(response_xml.root)
-            puts "marking success in get_login_accounts_em"
-            em_deferrable.succeed(accounts)
+            begin
+              if result.nil? || result.body.nil?
+                em_deferrable.fail
+                return nil
+              end
+
+              begin 
+                response_xml = REXML::Document.new result.body
+              rescue REXML::ParseException => msg
+                em_deferrable.fail
+                return nil
+              end
+              accounts = AccountList.load_from_xml(response_xml.root)
+
+              em_deferrable.succeed(accounts)
+            rescue => e 
+              handle_exception(e, "get_login_accounts_em", em_deferrable)
+            end   
           }
           EM.defer(operation, callback)          
 
@@ -405,7 +411,6 @@ module IntuitIdsAggcat
             response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
             response_xml = REXML::Document.new response.body
           rescue REXML::ParseException => msg
-              #Rails.logger.error "REXML Parse Exception"
               return nil
           end
           { :response_code => response.code, :response_xml => response_xml }
@@ -425,8 +430,6 @@ module IntuitIdsAggcat
             response = access_token.put(url, body, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
             response_xml = REXML::Document.new response.body
           rescue REXML::ParseException => msg
-              #Rails.logger.error "REXML Parse Exception"
-              #Rails.logger.error msg
               return nil
           end
           { :response_code => response.code, :response_xml => response_xml }
@@ -458,50 +461,42 @@ module IntuitIdsAggcat
         ##
         # Get transactions for a specific account and timeframe
         def get_account_transactions_em em_deferrable, account_id, start_date, end_date, oauth_token_info, consumer_key = IntuitIdsAggcat.config.oauth_consumer_key, consumer_secret = IntuitIdsAggcat.config.oauth_consumer_secret
-          puts "Account_id: #{account_id} start_date: #{start_date} end_date: #{end_date}, oauth_token_infoL #{oauth_token_info}"
-          puts 'got to get_account_transactions_em 1'
           txn_start = start_date.strftime("%Y-%m-%d")
           url = "https://financialdatafeed.platform.intuit.com/rest-war/v1/accounts/#{account_id}/transactions?txnStartDate=#{txn_start}"
-          #if !end_date.nil?
-          #  txn_end = end_date.strftime("%Y-%m-%d")
-          #  url = "#{url}&txnEndDate=#{txn_end}"
-          #end
 
           IntuitInstitution.restartEMIfNeeded
 
           access_token = self.getAccessToken(oauth_token_info, consumer_key, consumer_secret)
-          puts 'got to get_account_transactions_em 2'
 
           operation = lambda {
-              puts "Got to get_account_transactions_em 4aaabbb...."
+            begin
               response = access_token.get(url, { "Content-Type"=> 'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
-              puts "response: #{response}"
               return response
+            rescue => e 
+              handle_exception(e, "get_account_transactions_em", em_deferrable)
+            end   
           }
           callback = lambda { |result| 
-            puts "got to get_account_transactions_em 5"
-            if result.nil?
-              em_deferrable.fail
-              puts "Nil response for em_defferable in get_account_transactions!"
-              return nil
-            end
-            puts 'got to get_account_transactions_em 6'
-            puts "loading accounts in get account transactions"
-            begin 
-              response_xml = REXML::Document.new result.body
-            rescue REXML::ParseException => msg
-              puts "parsing failure in get account transactions"
-              em_deferrable.fail
-              return nil
-            end
-            xml = REXML::Document.new response_xml.to_s
-            tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
-            # Return transactions to the main deferred process 
-            puts 'got to get_account_transactions_em 6'
-            puts 'marking success in get account transactions'
-            em_deferrable.succeed(tl)
+            begin
+              if result.nil?
+                em_deferrable.fail
+                return nil
+              end
+              begin 
+                response_xml = REXML::Document.new result.body
+              rescue REXML::ParseException => msg
+                em_deferrable.fail
+                return nil
+              end
+              xml = REXML::Document.new response_xml.to_s
+              tl = IntuitIdsAggcat::TransactionList.load_from_xml xml.root
+              # Return transactions to the main deferred process 
+
+              em_deferrable.succeed(tl)
+            rescue => e 
+              handle_exception(e, "get_account_transactions_em", em_deferrable)
+            end   
           }
-          puts 'got to get_account_transactions_em 3'
           EM.defer(operation, callback) 
 
         end

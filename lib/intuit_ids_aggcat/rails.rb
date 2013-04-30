@@ -80,7 +80,6 @@ module IntuitIdsAggcat
     # Configures gem to log to the Rails default logger.
     # @return [nil]
     def self.log_to_rails_logger
-     # AWS.config(:logger => rails_logger)
       nil
     end
 

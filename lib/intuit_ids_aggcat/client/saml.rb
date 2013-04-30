@@ -122,34 +122,32 @@ EOF_XML
           @request.set_form_data({"saml_assertion"=>saml_assertion_b64})
           http.use_ssl = true
           http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-          #http.set_debug_output($stdout)
           
 
           @operation = lambda {
-              puts 'started oauth 123'
-              puts "http: #{http}"
-              puts "request: #{@request}"
+            begin
               return http.request(@request)
-              #puts "getting oauth token here 123 456"
-              #@reply = http.request(@request)
-              #puts "reply: #{@reply}"
-              #return @reply
+            rescue => e 
+              em_deferrable.fail
+            end   
+
           }
 
           @callback = lambda { |response_back|
-            @response = response_back
-            puts "parsing response" 
-            if @response.nil? || @response.body.nil?
+            begin
+              @response = response_back
+              if @response.nil? || @response.body.nil?
+                em_deferrable.fail
+                return
+              end
+              params = CGI::parse(@response.body)
+              oauth_token_info = {oauth_token_secret: params["oauth_token_secret"][0],
+                      oauth_token: params["oauth_token"][0] }        
+              oauth_token_info[:token_expiry] = instant + @token_timeout
+              em_deferrable.succeed(oauth_token_info) if !em_deferrable.nil?
+            rescue => e 
               em_deferrable.fail
-              return
-            end
-            puts 'still parsing'
-            params = CGI::parse(@response.body)
-            puts 'got here 1'
-            oauth_token_info = {oauth_token_secret: params["oauth_token_secret"][0],
-                    oauth_token: params["oauth_token"][0] }        
-            oauth_token_info[:token_expiry] = instant + @token_timeout
-            em_deferrable.succeed(oauth_token_info) if !em_deferrable.nil?
+            end   
           }
 
           IntuitInstitution.restartEMIfNeeded
@@ -171,8 +169,6 @@ EOF_XML
           saml_assertion_xml = get_saml_assertion_xml issuer_id, username, private_key_path, private_key_string, private_key_password, instant
           saml_assertion_b64 = Base64.strict_encode64(saml_assertion_xml)
           oauth_token_info = send_saml_assertion_em em_deferrable, saml_assertion_b64, oauth_consumer_key, oauth_consumer_secret, instant
-       #   oauth_token_info[:token_expiry] = instant + @token_timeout
-       #   oauth_token_info
         end
 
 
