@@ -77,8 +77,11 @@ module IntuitIdsAggcat
           callback = lambda { |result| 
             begin 
               response_xml = REXML::Document.new result.body
+              institutions = InstitutionDetail.load_from_xml(response_xml.root)
+              em_deferrable.succeed(institutions)
             rescue => e 
               handle_exception(e, "get_institution_detail_em", em_deferrable)
+              return
             end   
           }
           EM.defer(operation, callback)
@@ -237,7 +240,6 @@ module IntuitIdsAggcat
           }
           callback = lambda { |result| 
             begin 
-              dsfdfsdfsd
               if result.nil? || result.body.nil?
                 em_deferrable.fail("nil response when discovering accounts") if !em_deferrable.nil?
                 return
@@ -410,7 +412,7 @@ module IntuitIdsAggcat
           begin
             response = access_token.get(url, { "Content-Type"=>'application/xml', 'Host' => 'financialdatafeed.platform.intuit.com' })
             response_xml = REXML::Document.new response.body
-          rescue REXML::ParseException => msg
+          rescue 
               return nil
           end
           { :response_code => response.code, :response_xml => response_xml }
