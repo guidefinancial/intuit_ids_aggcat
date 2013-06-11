@@ -248,8 +248,8 @@ module IntuitIdsAggcat
                # handle challenge responses from discoverAndAcccounts flow
               challenge_session_id = challenge_node_id = nil
               if !result["challengeSessionId"].nil?
-                challenge_session_id = response["challengeSessionId"]
-                challenge_node_id = response["challengeNodeId"]
+                challenge_session_id = result["challengeSessionId"]
+                challenge_node_id = result["challengeNodeId"]
               end
               response_hash = { :challenge_session_id => challenge_session_id, :challenge_node_id => challenge_node_id, :response_code => result.code, :response_xml => response_xml }
               @params = discover_account_data_to_hash response_hash
